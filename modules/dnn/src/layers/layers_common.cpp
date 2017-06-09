@@ -54,7 +54,8 @@ std::string makeName(const std::string& str1, const std::string& str2)
     return str1 + str2;
 }
 
-bool getParameter(LayerParams &params, const std::string& nameBase, const std::string& nameAll, int &parameterH, int &parameterW, bool hasDefault = false, const int& defaultValue = 0)
+bool getParameter(const LayerParams &params, const std::string& nameBase, const std::string& nameAll,
+                  int &parameterH, int &parameterW, bool hasDefault = false, const int& defaultValue = 0)
 {
     std::string nameH = makeName(nameBase, std::string("_h"));
     std::string nameW = makeName(nameBase, std::string("_w"));
@@ -92,7 +93,7 @@ bool getParameter(LayerParams &params, const std::string& nameBase, const std::s
     }
 }
 
-void getKernelSize(LayerParams &params, int &kernelH, int &kernelW)
+void getKernelSize(const LayerParams &params, int &kernelH, int &kernelW)
 {
     if(!util::getParameter(params, "kernel", "kernel_size", kernelH, kernelW))
     {
@@ -102,7 +103,7 @@ void getKernelSize(LayerParams &params, int &kernelH, int &kernelW)
     CV_Assert(kernelH > 0 && kernelW > 0);
 }
 
-void getStrideAndPadding(LayerParams &params, int &padH, int &padW, int &strideH, int &strideW, cv::String& padMode)
+void getStrideAndPadding(const LayerParams &params, int &padH, int &padW, int &strideH, int &strideW, cv::String& padMode)
 {
     util::getParameter(params, "pad", "pad", padH, padW, true, 0);
     util::getParameter(params, "stride", "stride", strideH, strideW, true, 1);
@@ -118,7 +119,7 @@ void getStrideAndPadding(LayerParams &params, int &padH, int &padW, int &strideH
 }
 
 
-void getPoolingKernelParams(LayerParams &params, int &kernelH, int &kernelW, bool &globalPooling,
+void getPoolingKernelParams(const LayerParams &params, int &kernelH, int &kernelW, bool &globalPooling,
                             int &padH, int &padW, int &strideH, int &strideW, cv::String &padMode)
 {
     util::getStrideAndPadding(params, padH, padW, strideH, strideW, padMode);
@@ -142,7 +143,7 @@ void getPoolingKernelParams(LayerParams &params, int &kernelH, int &kernelW, boo
     }
 }
 
-void getConvolutionKernelParams(LayerParams &params, int &kernelH, int &kernelW, int &padH, int &padW,
+void getConvolutionKernelParams(const LayerParams &params, int &kernelH, int &kernelW, int &padH, int &padW,
                                 int &strideH, int &strideW, int &dilationH, int &dilationW, cv::String &padMode)
 {
     util::getKernelSize(params, kernelH, kernelW);
@@ -162,29 +163,41 @@ void getConvolutionKernelParams(LayerParams &params, int &kernelH, int &kernelW,
 // We pad Pr/2 on the left and Pr - Pr/2 on the right, Pc/2 on the top
 // and Pc - Pc/2 on the bottom.  When Pr or Pc is odd, this means
 // we pad more on the right and bottom than on the top and left.
-void getConvPoolOutParams(const int inputH, const int inputW, const cv::Size &kernel,
-                          const cv::Size &stride, cv::Size& pad, const cv::String &padMode,
-                          int &outH, int &outW)
+void getConvPoolOutParams(const Size& inp, const Size &kernel,
+                          const Size &stride, const String &padMode,
+                          Size& out)
 {
     if (padMode == "VALID")
     {
-        outH = (inputH - kernel.height + stride.height) / stride.height;
-        outW = (inputW - kernel.width + stride.width) / stride.width;
-        pad = cv::Size(0,0);
+        out.height = (inp.height - kernel.height + stride.height) / stride.height;
+        out.width = (inp.width- kernel.width + stride.width) / stride.width;
     }
     else if (padMode == "SAME")
     {
-        outH = (inputH - 1 + stride.height) / stride.height;
-        outW = (inputW - 1 + stride.width) / stride.width;
-        int Ph = std::max(0, (outH - 1) * stride.height + kernel.height - inputH);
-        int Pw = std::max(0, (outW - 1) * stride.width + kernel.width - inputW);
-        // For odd values of total padding, add more padding at the 'right'
-        // side of the given dimension.
-        pad = cv::Size(Pw / 2, Ph / 2);
+        out.height = (inp.height - 1 + stride.height) / stride.height;
+        out.width = (inp.width - 1 + stride.width) / stride.width;
     }
     else
     {
         CV_Error(Error::StsError, "Unsupported padding mode");
+    }
+}
+
+void getConvPoolPaddings(const Size& inp, const Size& out,
+                         const Size &kernel, const Size &stride,
+                         const String &padMode, Size &pad)
+{
+    if (padMode == "VALID")
+    {
+        pad = cv::Size(0,0);
+    }
+    else if (padMode == "SAME")
+    {
+        int Ph = std::max(0, (out.height - 1) * stride.height + kernel.height - inp.height);
+        int Pw = std::max(0, (out.width - 1) * stride.width + kernel.width - inp.width);
+        // For odd values of total padding, add more padding at the 'right'
+        // side of the given dimension.
+        pad = cv::Size(Pw / 2, Ph / 2);
     }
 }
 

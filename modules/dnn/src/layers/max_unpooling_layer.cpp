@@ -9,63 +9,83 @@
 Implementation of Batch Normalization layer.
 */
 
-#include "max_unpooling_layer.hpp"
+#include "../precomp.hpp"
+#include "layers_common.hpp"
+#include <opencv2/dnn/shape_utils.hpp>
 
 namespace cv
 {
 namespace dnn
 {
 
-MaxUnpoolLayerImpl::MaxUnpoolLayerImpl(Size outSize_):
-    outSize(outSize_)
-{}
-
-void MaxUnpoolLayerImpl::allocate(const std::vector<Blob*> &inputs, std::vector<Blob> &outputs)
+class MaxUnpoolLayerImpl : public MaxUnpoolLayer
 {
-    CV_Assert(inputs.size() == 2);
-
-    BlobShape outShape = inputs[0]->shape();
-    outShape[2] = outSize.height;
-    outShape[3] = outSize.width;
-
-    CV_Assert(inputs[0]->total() == inputs[1]->total());
-
-    outputs.resize(1);
-    outputs[0].create(outShape);
-}
-
-void MaxUnpoolLayerImpl::forward(std::vector<Blob*> &inputs, std::vector<Blob> &outputs)
-{
-    CV_Assert(inputs.size() == 2);
-    Blob& input = *inputs[0];
-    Blob& indices = *inputs[1];
-
-    CV_Assert(input.total() == indices.total());
-    CV_Assert(input.num() == 1);
-
-    for(int i_n = 0; i_n < outputs.size(); i_n++)
+public:
+    MaxUnpoolLayerImpl(const LayerParams& params)
     {
-        Blob& outBlob = outputs[i_n];
-        outBlob.setTo(0);
-        CV_Assert(input.channels() == outBlob.channels());
+        setParamsFrom(params);
+        poolKernel = Size(params.get<int>("pool_k_w"), params.get<int>("pool_k_h"));
+        poolPad = Size(params.get<int>("pool_pad_w"), params.get<int>("pool_pad_h"));
+        poolStride = Size(params.get<int>("pool_stride_w"), params.get<int>("pool_stride_h"));
+    }
 
-        for (int i_c = 0; i_c < input.channels(); i_c++)
+    bool getMemoryShapes(const std::vector<MatShape> &inputs,
+                         const int requiredOutputs,
+                         std::vector<MatShape> &outputs,
+                         std::vector<MatShape> &internals) const
+    {
+        CV_Assert(inputs.size() == 2);
+        CV_Assert(total(inputs[0]) == total(inputs[1]));
+
+        MatShape outShape = inputs[0];
+        outShape[2] = (outShape[2] - 1) * poolStride.height + poolKernel.height - 2 * poolPad.height;
+        outShape[3] = (outShape[3] - 1) * poolStride.width + poolKernel.width - 2 * poolPad.width;
+
+        outputs.clear();
+        outputs.push_back(outShape);
+
+        return false;
+    }
+
+    void forward(std::vector<Mat*> &inputs, std::vector<Mat> &outputs, std::vector<Mat> &internals)
+    {
+        CV_Assert(inputs.size() == 2);
+        Mat& input = *inputs[0];
+        Mat& indices = *inputs[1];
+
+        CV_Assert(input.total() == indices.total());
+        CV_Assert(input.size[0] == 1);
+        CV_Assert(input.isContinuous());
+
+        for(int i_n = 0; i_n < outputs.size(); i_n++)
         {
-            Mat outPlane = outBlob.getPlane(0, i_c);
-            for(int i_wh = 0; i_wh < input.size2().area(); i_wh++)
-            {
-                int index = indices.getPlane(0, i_c).at<float>(i_wh);
+            Mat& outBlob = outputs[i_n];
+            outBlob.setTo(0);
+            CV_Assert(input.size[1] == outBlob.size[1]);
+            int outPlaneTotal = outBlob.size[2]*outBlob.size[3];
 
-                CV_Assert(index < outPlane.total());
-                outPlane.at<float>(index) = input.getPlane(0, i_c).at<float>(i_wh);
+            for (int i_c = 0; i_c < input.size[1]; i_c++)
+            {
+                Mat outPlane = getPlane(outBlob, 0, i_c);
+                int wh_area = input.size[2]*input.size[3];
+                const float* inptr = input.ptr<float>(0, i_c);
+                const float* idxptr = indices.ptr<float>(0, i_c);
+                float* outptr = outPlane.ptr<float>();
+
+                for(int i_wh = 0; i_wh < wh_area; i_wh++)
+                {
+                    int index = idxptr[i_wh];
+                    CV_Assert(0 <= index && index < outPlaneTotal);
+                    outptr[index] = inptr[i_wh];
+                }
             }
         }
     }
-}
+};
 
-Ptr<MaxUnpoolLayer> MaxUnpoolLayer::create(Size unpoolSize)
+Ptr<MaxUnpoolLayer> MaxUnpoolLayer::create(const LayerParams& params)
 {
-    return Ptr<MaxUnpoolLayer>(new MaxUnpoolLayerImpl(unpoolSize));
+    return Ptr<MaxUnpoolLayer>(new MaxUnpoolLayerImpl(params));
 }
 
 }

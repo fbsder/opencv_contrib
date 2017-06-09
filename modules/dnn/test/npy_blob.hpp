@@ -44,22 +44,22 @@
 #include "test_precomp.hpp"
 #include "cnpy.h"
 
-inline cv::dnn::Blob blobFromNPY(const cv::String &path)
+namespace cv
+{
+
+inline Mat blobFromNPY(const String &path)
 {
     cnpy::NpyArray npyBlob = cnpy::npy_load(path.c_str());
-    cv::dnn::BlobShape shape((int)npyBlob.shape.size(), (int*)&npyBlob.shape[0]);
-
-    cv::dnn::Blob blob(shape);
-    blob.fill(shape, CV_32F, npyBlob.data);
-
+    Mat blob = Mat((int)npyBlob.shape.size(), (int*)&npyBlob.shape[0], CV_32F, npyBlob.data).clone();
     npyBlob.destruct();
     return blob;
 }
 
-inline void saveBlobToNPY(cv::dnn::Blob &blob, const cv::String &path)
+inline void saveBlobToNPY(const Mat &blob, const String &path)
 {
-    cv::dnn::BlobShape shape = blob.shape();
-    cnpy::npy_save(path.c_str(), blob.ptrf(), (unsigned*)&shape[0], shape.dims());
+    cnpy::npy_save(path.c_str(), blob.ptr<float>(), (unsigned*)&blob.size.p[0], blob.dims);
+}
+
 }
 
 #endif
